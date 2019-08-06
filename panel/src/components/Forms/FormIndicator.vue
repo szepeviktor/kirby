@@ -1,5 +1,5 @@
 <template>
-  <k-dropdown v-if="storage.length > 0" class="k-form-indicator">
+  <k-dropdown v-if="hasChanges" class="k-form-indicator">
     <k-button class="k-topbar-button" @click="toggle">
       <k-icon type="edit" class="k-form-indicator-icon" />
     </k-button>
@@ -11,9 +11,9 @@
       <hr>
       <k-dropdown-item
         v-for="entry in entries"
-        :key="entry.link"
+        :key="entry.id"
         :icon="entry.icon"
-        :link="entry.link"
+        @click.native.stop="go(entry.target)"
       >
         {{ entry.label }}
       </k-dropdown-item>
@@ -26,53 +26,76 @@ export default {
   data() {
     return {
       isOpen: false,
-      entries: [],
-      storage: [],
+      entries: []
     }
   },
   computed: {
     store() {
-      return this.$store.state.form.models;
+      return this.$store.state.content.models;
+    },
+    models() {
+      let ids = Object.keys(this.store);
+      let models = ids.map(id => ({ id: id, ...this.store[id] }));
+      return models.filter(model => Object.keys(model.changes).length > 0);
+    },
+    hasChanges() {
+      return this.models.length > 0;
     }
-  },
-  watch: {
-    store: {
-      handler() {
-        this.loadFromStorage();
-      },
-      deep: true
-    }
-  },
-  created() {
-    this.loadFromStorage();
   },
   methods: {
-    loadFromApi() {
-      let promises = this.storage.map(model => {
+    go(target) {
+      // if a target language is set, switch to it
+      if (target.language) {
+        if (this.$store.state.languages.current.code !== target.language) {
+          const language = this.$store.state.languages.all.filter(l => l.code === target.language)[0];
+          this.$store.dispatch("languages/current", language);
+        }
+      }
+
+      this.$router.push(target.link);
+    },
+    load() {
+      const promises = this.models.map(model => {
         return this.$api.get(model.api, { view: "compact" }, null, true).then(response => {
+          let entry;
+
           if (model.id.startsWith("pages/")) {
-            return {
+            entry = {
               icon: "page",
               label: response.title,
-              link: this.$api.pages.link(response.id),
+              target: {
+                link: this.$api.pages.link(response.id)
+              }
             };
           }
 
           if (model.id.startsWith("files/")) {
-            return {
+            entry = {
               icon: "image",
               label: response.filename,
-              link: response.link,
+              target: {
+                link: response.link
+              }
             };
           }
 
           if (model.id.startsWith("users/")) {
-            return {
+            entry = {
               icon: "user",
               label: response.email,
-              link: this.$api.users.link(response.id),
+              target: {
+                link: this.$api.users.link(response.id),
+              }
             };
           }
+
+          if (this.$store.state.languages.current) {
+            const language = model.id.split("/").pop();
+            entry.label = entry.label + " (" + language + ")";
+            entry.target.language = language;
+          }
+
+          return entry;
         });
       });
 
@@ -80,29 +103,11 @@ export default {
         this.entries = entries;
       });
     },
-    loadFromStorage() {
-      // get all localStorage ids for form models
-      let ids = Object.keys(localStorage);
-          ids = ids.filter(key => key.startsWith("kirby$form$"));
-
-      // load the model from localStorage for each id
-      this.storage = ids.map(key => {
-        return {
-          ...JSON.parse(localStorage.getItem(key)),
-          id: key.split("kirby$form$")[1]
-        };
-      });
-
-      // filter models that do not have any changes
-      this.storage = this.storage.filter(data => {
-        return Object.keys(data.changes || {}).length > 0
-      });
-    },
     toggle() {
       this.isOpen = !this.isOpen;
 
       if (this.isOpen === true) {
-        this.loadFromApi().then(() => {
+        this.load().then(() => {
           this.$refs.list.toggle();
         });
       } else {
