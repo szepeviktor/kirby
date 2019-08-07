@@ -105,6 +105,10 @@ export default {
       Vue.set(state.status, "status", enabled);
     },
     UNLOCK(state, unlock) {
+      if (unlock) {
+        Vue.set(state.models[state.current], "changes", {});
+      }
+
       Vue.set(state.status, "unlock", unlock);
     },
     UPDATE(state, [id, field, value]) {
@@ -159,18 +163,18 @@ export default {
         changes: {}
       };
 
+      // check if content was previously unlocked
+      Api.get(model.api + "/unlock").then(response => {
+        if (
+          response.supported === true &&
+          response.unlocked === true
+        ) {
+          context.commit("UNLOCK", context.state.models[model.id].changes);
+        }
+      });
+
       context.commit("CREATE", [model.id, data]);
       context.commit("CURRENT", model.id);
-
-      // check for unlock
-      if (localStorage.getItem("kirby$content$" + model.id) !== null) {
-        Api.get(model.api + "/unlock").then(response => {
-          if (response.isUnlocked === true) {
-            context.commit("UNLOCK", context.getters.values(model.id));
-            return;
-          }
-        });
-      }
     },
     lock(context, lock) {
       context.commit("LOCK", lock);
