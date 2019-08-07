@@ -28,13 +28,23 @@
         <k-icon type="lock" />
         <span v-html="$t('lock.isLocked', { email: form.lock.email })" />
       </p>
+
       <k-button
+        v-if="sinceLock < 60"
+        icon="loader"
+        class="k-form-activity-indicator"
+      />
+      <k-button
+        v-else
         :disabled="!form.lock.unlockable"
         icon="unlock"
         class="k-form-button"
         @click="setUnlock"
       >
         {{ $t('lock.unlock') }}
+        <template v-if="sinceLock < 120">
+          ({{ 120 - sinceLock }})
+        </template>
       </k-button>
     </k-view>
 
@@ -63,7 +73,9 @@
 export default {
   data() {
     return {
-      supportsLocking: true
+      supportsLocking: true,
+      now: null,
+      interval: null
     }
   },
   computed: {
@@ -106,6 +118,11 @@ export default {
       if (this.hasChanges === true) {
         return "changes";
       }
+    },
+    sinceLock() {
+      if (this.form.lock && this.form.lock.time) {
+        return parseInt(this.now - this.form.lock.time);
+      }
     }
   },
   watch: {
@@ -142,9 +159,13 @@ export default {
   },
   created() {
     this.$events.$on("keydown.cmd.s", this.onSave);
+    this.interval = setInterval(() => {
+      this.now = new Date().getTime()/1000;
+    }, 1000);
   },
   destroyed() {
     this.$events.$off("keydown.cmd.s", this.onSave);
+    clearInterval(this.interval);
   },
   methods: {
     /**
@@ -355,5 +376,9 @@ export default {
 .k-form-lock-buttons {
   display: flex;
   flex-shrink: 0;
+}
+
+.k-form-activity-indicator {
+  animation: Spin 3s linear infinite;
 }
 </style>
