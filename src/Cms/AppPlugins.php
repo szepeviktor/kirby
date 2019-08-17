@@ -676,8 +676,15 @@ trait AppPlugins
     {
         // overwrite the existing plugins registry
         if ($plugins !== null) {
+            // mark plugins as loaded to avoid overwriting them later
+            // already doing this here to avoid a plugin loader loop
             $this->pluginsAreLoaded = true;
-            return static::$plugins = $plugins;
+
+            $this->trigger('system.loadPlugins:before');
+            static::$plugins = $plugins;
+            $this->trigger('system.loadPlugins:after');
+
+            return static::$plugins;
         }
 
         // don't load plugins twice
@@ -685,11 +692,15 @@ trait AppPlugins
             return static::$plugins;
         }
 
-        // load all plugins from site/plugins
-        $this->pluginsLoader();
-
         // mark plugins as loaded to stop doing it twice
+        // already doing this here to avoid a plugin loader loop
         $this->pluginsAreLoaded = true;
+
+        // load all plugins from site/plugins
+        $this->trigger('system.loadPlugins:before');
+        $this->pluginsLoader();
+        $this->trigger('system.loadPlugins:after');
+
         return static::$plugins;
     }
 
