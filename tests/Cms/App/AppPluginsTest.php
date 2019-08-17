@@ -8,6 +8,7 @@ use Kirby\Cache\FileCache;
 use Kirby\Toolkit\Collection;
 use Kirby\Toolkit\Dir;
 use Kirby\Toolkit\I18n;
+use ReflectionProperty;
 
 class DummyCache extends FileCache
 {
@@ -27,6 +28,9 @@ class DummyUser extends User
 
 class AppPluginsTest extends TestCase
 {
+    // used for testPluginLoader()
+    public static $calledPluginLoadedHook = false;
+
     public function setUp(): void
     {
         App::destroy();
@@ -821,5 +825,75 @@ class AppPluginsTest extends TestCase
 
         // reset methods
         Users::$methods = [];
+    }
+
+    public function testPluginLoader()
+    {
+        $pluginsProp = new ReflectionProperty(App::class, 'plugins');
+        $pluginsProp->setAccessible(true);
+
+        $phpUnit  = $this;
+        $executed = 0;
+
+        $kirby = new App([
+            'roots' => [
+                'index'   => $this->fixtures = __DIR__ . '/fixtures/AppPluginsTest',
+                'plugins' => $this->fixtures . '/site/plugins-loader'
+            ],
+            'hooks' => [
+                'system.loadPlugins:before' => function () use ($pluginsProp, $phpUnit, &$executed) {
+                    $propValue = $pluginsProp->getValue();
+
+                    if (count($propValue) === 1) {
+                        $phpUnit->assertArrayHasKey('kirby/test1', $propValue);
+                    } else {
+                        $phpUnit->assertEquals([], $propValue);
+                    }
+
+                    $executed++;
+                },
+                'system.loadPlugins:after' => function () use ($pluginsProp, $phpUnit, &$executed) {
+                    $propValue = $pluginsProp->getValue();
+
+                    if (count($propValue) === 2) {
+                        $phpUnit->assertEquals([
+                            'kirby/manual1' => new Plugin('kirby/manual1', []),
+                            'kirby/manual2' => new Plugin('kirby/manual2', [])
+                        ], $propValue);
+                    } else {
+                        $phpUnit->assertEquals([
+                            'kirby/test1' => new Plugin('kirby/test1', [
+                                'hooks' => [
+                                    'system.loadPlugins:after' => function () {
+                                        // just a dummy closure to compare against
+                                    }
+                                ],
+                                'root' => $phpUnit->fixtures . '/site/plugins-loader/test1'
+                            ])
+                        ], $propValue);
+                    }
+
+                    $phpUnit->assertEquals($propValue, $this->plugins());
+
+                    $executed += 2;
+                }
+            ]
+        ]);
+
+        // the hook defined inside the test1 plugin should also have been called
+        $this->assertTrue(static::$calledPluginLoadedHook);
+
+        // try loading again (which should *not* trigger the hooks again)
+        $kirby->plugins();
+
+        // overwrite plugins with a custom array
+        $expected = [
+            'kirby/manual1' => new Plugin('kirby/manual1', []),
+            'kirby/manual2' => new Plugin('kirby/manual2', [])
+        ];
+        $this->assertEquals($expected, $kirby->plugins($expected));
+
+        // before and after hooks should both be called two times (= 2 * 1 + 2 * 2)
+        $this->assertEquals(6, $executed);
     }
 }
